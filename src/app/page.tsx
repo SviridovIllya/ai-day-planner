@@ -48,8 +48,22 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Помилка запиту");
-      // T4: додаємо до існуючого списку, не замінюємо
-      setTasks((prev) => [...prev, ...(data.tasks as Task[])]);
+      // T4: додаємо до існуючого списку, не замінюємо.
+      // Дедуп: пропускаємо задачу, якщо вже є незавершена з такою ж назвою
+      // (без урахування регістру/пробілів), і чистимо дублікати в самому батчі.
+      setTasks((prev) => {
+        const seen = new Set(
+          prev.filter((t) => !t.completed).map((t) => t.title.trim().toLowerCase()),
+        );
+        const additions: Task[] = [];
+        for (const t of data.tasks as Task[]) {
+          const key = t.title.trim().toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          additions.push(t);
+        }
+        return [...prev, ...additions];
+      });
       setText("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Невідома помилка");
