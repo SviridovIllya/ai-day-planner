@@ -11,11 +11,12 @@ export type Task = {
   createdAt: string; // ISO datetime
 };
 
-// Поля, які повертає модель. Решту (id, scheduledDate, completed, createdAt)
-// проставляє сервер — не довіряємо моделі генерувати їх.
+// Поля, які повертає модель. Решту (id, completed, createdAt) проставляє сервер.
+// scheduledDate модель теж повертає (Фаза 2b), але сервер валідує/клемпить його в горизонт.
 export type ParsedTask = {
   title: string;
   priority: Priority;
   estimatedMinutes: number | null;
+  scheduledDate: string;
   deadline: string | null;
 };

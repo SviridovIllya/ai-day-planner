@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Priority, Task } from "@/lib/types";
+import { dayLabel, localToday } from "@/lib/dates";
 
 const STORAGE_KEY = "ai-day-planner:tasks";
 
@@ -11,15 +12,38 @@ const PRIORITY_STYLES: Record<Priority, { label: string; className: string }> = 
   low: { label: "Низький", className: "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400" },
 };
 
+const PRIORITY_RANK: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
+
+type DateGroup = { date: string; label: string; tasks: Task[] };
+
+// T6: групуємо за scheduledDate, дати за зростанням; у групі — пріоритет, потім за часом.
+function groupByDate(tasks: Task[], today: string): DateGroup[] {
+  const byDate = new Map<string, Task[]>();
+  for (const t of tasks) {
+    const arr = byDate.get(t.scheduledDate) ?? [];
+    arr.push(t);
+    byDate.set(t.scheduledDate, arr);
+  }
+  return [...byDate.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, items]) => ({
+      date,
+      label: dayLabel(date, today),
+      tasks: [...items].sort((x, y) => {
+        const byPriority = PRIORITY_RANK[x.priority] - PRIORITY_RANK[y.priority];
+        if (byPriority !== 0) return byPriority;
+        return (x.estimatedMinutes ?? Infinity) - (y.estimatedMinutes ?? Infinity);
+      }),
+    }));
+}
+
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Не записуємо в localStorage до першого читання (щоб не затерти збережене порожнім масивом).
   const hydrated = useRef(false);
 
-  // T2: читання при монтуванні
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -30,7 +54,6 @@ export default function Home() {
     hydrated.current = true;
   }, []);
 
-  // T2: запис при кожній зміні
   useEffect(() => {
     if (!hydrated.current) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
@@ -44,13 +67,11 @@ export default function Home() {
       const res = await fetch("/api/parse-tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, today: localToday() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Помилка запиту");
-      // T4: додаємо до існуючого списку, не замінюємо.
-      // Дедуп: пропускаємо задачу, якщо вже є незавершена з такою ж назвою
-      // (без урахування регістру/пробілів), і чистимо дублікати в самому батчі.
+      // T4: додаємо, не замінюємо; дедуп за назвою серед незавершених + у межах батчу.
       setTasks((prev) => {
         const seen = new Set(
           prev.filter((t) => !t.completed).map((t) => t.title.trim().toLowerCase()),
@@ -78,6 +99,8 @@ export default function Home() {
     );
   }
 
+  const groups = tasks.length > 0 ? groupByDate(tasks, localToday()) : [];
+
   return (
     <div className="min-h-full flex-1 bg-zinc-50 dark:bg-black">
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10 sm:py-16">
@@ -86,7 +109,7 @@ export default function Home() {
             AI Day Planner
           </h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Вивали все з голови — AI розкладе це на задачі.
+            Вивали все з голови — AI розкладе це на задачі по днях.
           </p>
         </header>
 
@@ -108,49 +131,62 @@ export default function Home() {
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         </section>
 
-        <section className="flex flex-col gap-2">
-          {tasks.length === 0 ? (
-            <p className="py-8 text-center text-sm text-zinc-400">
-              Задач поки немає. Введи текст вище й натисни «Розібрати».
+        {tasks.length === 0 ? (
+          // T7: свідомий empty state, а не "порожній екран як баг"
+          <section className="mt-4 flex flex-col items-center gap-2 rounded-xl border border-dashed border-zinc-300 py-12 text-center dark:border-zinc-700">
+            <div className="text-4xl">🧠</div>
+            <p className="font-medium text-black dark:text-zinc-50">Порожньо — і це добре</p>
+            <p className="max-w-xs text-sm text-zinc-500 dark:text-zinc-400">
+              Вивали в поле вище все, що крутиться в голові, і натисни «Розібрати».
+              AI перетворить це на задачі й розкладе по днях.
             </p>
-          ) : (
-            tasks.map((task) => {
-              const p = PRIORITY_STYLES[task.priority];
-              return (
-                <label
-                  key={task.id}
-                  className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-900"
-                >
-                  <input
-                    type="checkbox"
-                    checked={task.completed}
-                    onChange={() => toggleCompleted(task.id)}
-                    className="h-4 w-4 shrink-0 accent-black dark:accent-white"
-                  />
-                  <span
-                    className={`flex-1 text-sm ${
-                      task.completed
-                        ? "text-zinc-400 line-through dark:text-zinc-600"
-                        : "text-black dark:text-zinc-50"
-                    }`}
-                  >
-                    {task.title}
-                  </span>
-                  {task.estimatedMinutes != null && (
-                    <span className="shrink-0 text-xs text-zinc-400">
-                      {task.estimatedMinutes} хв
-                    </span>
-                  )}
-                  <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${p.className}`}
-                  >
-                    {p.label}
-                  </span>
-                </label>
-              );
-            })
-          )}
-        </section>
+          </section>
+        ) : (
+          <div className="flex flex-col gap-6">
+            {groups.map((group) => (
+              <section key={group.date} className="flex flex-col gap-2">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  {group.label}
+                </h2>
+                {group.tasks.map((task) => {
+                  const p = PRIORITY_STYLES[task.priority];
+                  return (
+                    <label
+                      key={task.id}
+                      className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-900"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={task.completed}
+                        onChange={() => toggleCompleted(task.id)}
+                        className="h-4 w-4 shrink-0 accent-black dark:accent-white"
+                      />
+                      <span
+                        className={`flex-1 text-sm ${
+                          task.completed
+                            ? "text-zinc-400 line-through dark:text-zinc-600"
+                            : "text-black dark:text-zinc-50"
+                        }`}
+                      >
+                        {task.title}
+                      </span>
+                      {task.estimatedMinutes != null && (
+                        <span className="shrink-0 text-xs text-zinc-400">
+                          {task.estimatedMinutes} хв
+                        </span>
+                      )}
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${p.className}`}
+                      >
+                        {p.label}
+                      </span>
+                    </label>
+                  );
+                })}
+              </section>
+            ))}
+          </div>
+        )}
       </main>
     </div>
   );
