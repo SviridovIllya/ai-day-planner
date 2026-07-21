@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  closestCenter,
   DndContext,
   DragOverlay,
   MeasuringStrategy,
   PointerSensor,
+  closestCenter,
   pointerWithin,
   useDraggable,
   useDroppable,
@@ -17,104 +17,162 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import type { Priority, Task } from "@/lib/types";
-import { addDays, dayLabel, localToday } from "@/lib/dates";
-
-// Тримаємо виміри droppable-ів свіжими (список задач змінюється).
-const MEASURING = { droppable: { strategy: MeasuringStrategy.Always } };
-
-// Кидай туди, де курсор; якщо курсор у проміжку між днями — беремо найближчий день.
-const collisionDetection: CollisionDetection = (args) => {
-  const withinPointer = pointerWithin(args);
-  return withinPointer.length > 0 ? withinPointer : closestCenter(args);
-};
+import { addDays, dayLabel, diffDays, formatDuration, localToday, shortDate } from "@/lib/dates";
 
 const STORAGE_KEY = "ai-day-planner:tasks";
 const HORIZON_DAYS = 7;
+const OVERLOAD_MINUTES = 8 * 60; // > 8 год на день → мʼяке попередження
 
-const PRIORITY_STYLES: Record<Priority, { label: string; className: string }> = {
-  high: { label: "Високий", className: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" },
-  medium: { label: "Середній", className: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" },
-  low: { label: "Низький", className: "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400" },
+const MEASURING = { droppable: { strategy: MeasuringStrategy.Always } };
+
+// Кидай туди, де курсор; якщо курсор у проміжку — беремо найближчий день.
+const collisionDetection: CollisionDetection = (args) => {
+  const within = pointerWithin(args);
+  return within.length > 0 ? within : closestCenter(args);
+};
+
+const PRIORITY: Record<Priority, { label: string; stripe: string }> = {
+  high: { label: "Високий пріоритет", stripe: "bg-red-500" },
+  medium: { label: "Середній пріоритет", stripe: "bg-amber-500" },
+  low: { label: "Низький пріоритет", stripe: "bg-zinc-300 dark:bg-zinc-600" },
 };
 
 const PRIORITY_RANK: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
 
 function sortTasks(tasks: Task[]): Task[] {
   return [...tasks].sort((x, y) => {
+    if (x.completed !== y.completed) return x.completed ? 1 : -1; // виконані — донизу
     const byPriority = PRIORITY_RANK[x.priority] - PRIORITY_RANK[y.priority];
     if (byPriority !== 0) return byPriority;
     return (x.estimatedMinutes ?? Infinity) - (y.estimatedMinutes ?? Infinity);
   });
 }
 
-// Презентаційна картка задачі (використовується в списку і в DragOverlay).
+function pluralTasks(n: number): string {
+  const a = n % 10;
+  const b = n % 100;
+  if (a === 1 && b !== 11) return "задача";
+  if (a >= 2 && a <= 4 && (b < 10 || b >= 20)) return "задачі";
+  return "задач";
+}
+
+function deadlineChip(deadline: string, today: string): { label: string; urgent: boolean } {
+  const diff = diffDays(deadline, today);
+  if (diff < 0) return { label: "протерміновано", urgent: true };
+  if (diff === 0) return { label: "сьогодні", urgent: true };
+  if (diff === 1) return { label: "до завтра", urgent: false };
+  return { label: `до ${shortDate(deadline)}`, urgent: false };
+}
+
+// Анімований чекбокс (галочка «пружинить»).
+function CheckButton({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={checked ? "Позначити як невиконане" : "Позначити виконаним"}
+      onClick={onToggle}
+      className={`grid h-5 w-5 shrink-0 place-items-center rounded-[6px] border transition-all duration-150 active:scale-90 ${
+        checked
+          ? "border-black bg-black dark:border-white dark:bg-white"
+          : "border-zinc-300 hover:border-zinc-400 dark:border-zinc-600 dark:hover:border-zinc-500"
+      }`}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={3.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={`h-3 w-3 text-white transition-transform duration-150 dark:text-black ${
+          checked ? "scale-100" : "scale-0"
+        }`}
+      >
+        <path d="M20 6 9 17l-5-5" />
+      </svg>
+    </button>
+  );
+}
+
 function TaskCard({
   task,
+  today,
   onToggle,
   onDelete,
   handleProps,
   dragging,
 }: {
   task: Task;
+  today: string;
   onToggle?: (id: string) => void;
   onDelete?: (id: string) => void;
   handleProps?: Record<string, unknown>;
   dragging?: boolean;
 }) {
-  const p = PRIORITY_STYLES[task.priority];
+  const p = PRIORITY[task.priority];
+  const dl = task.deadline ? deadlineChip(task.deadline, today) : null;
+  const hasMeta = task.estimatedMinutes != null || dl != null;
+
   return (
     <div
-      className={`flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2 py-2.5 dark:border-zinc-800 dark:bg-zinc-900 ${
+      className={`flex items-stretch overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 ${
         dragging ? "opacity-40" : ""
       }`}
     >
-      <button
-        {...handleProps}
-        aria-label="Перетягнути"
-        className="shrink-0 cursor-grab touch-none px-1 text-zinc-300 hover:text-zinc-500 active:cursor-grabbing dark:text-zinc-600"
-      >
-        ⠿
-      </button>
-      <input
-        type="checkbox"
-        checked={task.completed}
-        onChange={() => onToggle?.(task.id)}
-        className="h-4 w-4 shrink-0 accent-black dark:accent-white"
-      />
-      <span
-        className={`min-w-0 flex-1 truncate text-sm ${
-          task.completed
-            ? "text-zinc-400 line-through dark:text-zinc-600"
-            : "text-black dark:text-zinc-50"
-        }`}
-      >
-        {task.title}
-      </span>
-      {task.estimatedMinutes != null && (
-        <span className="hidden shrink-0 text-xs text-zinc-400 sm:inline">
-          {task.estimatedMinutes} хв
-        </span>
-      )}
-      <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${p.className}`}>
-        {p.label}
-      </span>
-      <button
-        onClick={() => onDelete?.(task.id)}
-        aria-label="Видалити"
-        className="shrink-0 rounded px-1 text-lg leading-none text-zinc-300 hover:text-red-500 dark:text-zinc-600"
-      >
-        ×
-      </button>
+      <div className={`w-1 shrink-0 ${p.stripe}`} aria-label={p.label} />
+      <div className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2.5">
+        <button
+          {...handleProps}
+          aria-label="Перетягнути"
+          className="shrink-0 cursor-grab touch-none px-0.5 text-base leading-none text-zinc-400 hover:text-zinc-600 active:cursor-grabbing dark:text-zinc-500 dark:hover:text-zinc-300"
+        >
+          ⠿
+        </button>
+        <CheckButton checked={task.completed} onToggle={() => onToggle?.(task.id)} />
+        <div className="min-w-0 flex-1">
+          <p
+            className={`text-sm leading-snug ${
+              task.completed
+                ? "text-zinc-400 line-through dark:text-zinc-600"
+                : "text-black dark:text-zinc-50"
+            }`}
+          >
+            {task.title}
+          </p>
+          {hasMeta && !task.completed && (
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-zinc-400 dark:text-zinc-500">
+              {task.estimatedMinutes != null && <span>{formatDuration(task.estimatedMinutes)}</span>}
+              {task.estimatedMinutes != null && dl && <span aria-hidden>·</span>}
+              {dl && (
+                <span className={dl.urgent ? "font-medium text-red-500 dark:text-red-400" : ""}>
+                  {dl.label}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={() => onDelete?.(task.id)}
+          aria-label="Видалити"
+          className="shrink-0 rounded px-1 text-lg leading-none text-zinc-300 transition-colors hover:text-red-500 dark:text-zinc-600"
+        >
+          ×
+        </button>
+      </div>
     </div>
   );
 }
 
 function DraggableTask({
   task,
+  today,
   onToggle,
   onDelete,
 }: {
   task: Task;
+  today: string;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
@@ -123,6 +181,7 @@ function DraggableTask({
     <div ref={setNodeRef}>
       <TaskCard
         task={task}
+        today={today}
         onToggle={onToggle}
         onDelete={onDelete}
         handleProps={{ ...attributes, ...listeners }}
@@ -135,34 +194,50 @@ function DraggableTask({
 function DayColumn({
   date,
   label,
+  load,
+  isEmpty,
   children,
-  empty,
 }: {
   date: string;
   label: string;
+  load: { count: number; minutes: number } | null;
+  isEmpty: boolean;
   children: React.ReactNode;
-  empty: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: date });
+  const overloaded = load != null && load.minutes > OVERLOAD_MINUTES;
   return (
     <section className="flex flex-col gap-2">
-      <h2
-        className={`text-xs font-semibold uppercase tracking-wide ${
-          isOver ? "text-black dark:text-zinc-50" : "text-zinc-400"
-        }`}
-      >
-        {label}
-      </h2>
+      <div className="flex items-baseline gap-2">
+        <h2
+          className={`text-xs font-semibold uppercase tracking-wide ${
+            isEmpty ? "text-zinc-300 dark:text-zinc-700" : "text-zinc-500 dark:text-zinc-400"
+          } ${isOver ? "text-black dark:text-zinc-50" : ""}`}
+        >
+          {label}
+        </h2>
+        {load && (
+          <span className="text-xs text-zinc-400 dark:text-zinc-500">
+            {load.count} {pluralTasks(load.count)}
+            {load.minutes > 0 && <> · ~{formatDuration(load.minutes)}</>}
+            {overloaded && (
+              <span className="ml-1 font-medium text-amber-600 dark:text-amber-400">
+                · перевантажений
+              </span>
+            )}
+          </span>
+        )}
+      </div>
       <div
         ref={setNodeRef}
         className={`flex flex-col gap-2 rounded-lg transition-colors ${
           isOver ? "bg-zinc-200/60 p-1 ring-2 ring-black/30 dark:bg-zinc-800/60 dark:ring-white/30" : ""
         }`}
       >
-        {empty ? (
-          <p className="rounded-lg border border-dashed border-zinc-300 py-3 text-center text-xs text-zinc-400 dark:border-zinc-700">
-            Перетягни сюди
-          </p>
+        {isEmpty ? (
+          <div className="rounded-md border border-dashed border-zinc-200 py-1.5 text-center text-[11px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-700">
+            {isOver ? "Відпусти тут" : "—"}
+          </div>
         ) : (
           children
         )}
@@ -179,11 +254,7 @@ export default function Home() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const hydrated = useRef(false);
 
-  // PointerSensor обробляє мишу і тач через pointer-події; drag стартує тільки
-  // з ручки (touch-action:none на ній), тож звичайний скрол/тап не конфліктують.
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-  );
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   useEffect(() => {
     try {
@@ -241,10 +312,6 @@ export default function Home() {
     setTasks((prev) => prev.filter((t) => t.id !== id));
   }
 
-  function handleDragStart(e: DragStartEvent) {
-    setActiveId(String(e.active.id));
-  }
-
   function handleDragEnd(e: DragEndEvent) {
     setActiveId(null);
     const { active, over } = e;
@@ -257,11 +324,10 @@ export default function Home() {
 
   const today = localToday();
 
-  // Завжди показуємо весь 7-денний тиждень (стабільний лейаут + усі дні як цілі
-  // для drop) плюс будь-які минулі дні, де ще лишились задачі.
   const dateSet = new Set(tasks.map((t) => t.scheduledDate));
   for (let i = 0; i < HORIZON_DAYS; i++) dateSet.add(addDays(today, i));
   const dates = [...dateSet].sort();
+
   const tasksByDate = new Map<string, Task[]>();
   for (const t of tasks) {
     const arr = tasksByDate.get(t.scheduledDate) ?? [];
@@ -287,7 +353,7 @@ export default function Home() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Що в голові? Напр.: купити молоко, подзвонити клієнту до п'ятниці, зробити презентацію…"
-            rows={4}
+            rows={3}
             className="w-full resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-black outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
           />
           <button
@@ -314,24 +380,34 @@ export default function Home() {
             sensors={sensors}
             collisionDetection={collisionDetection}
             measuring={MEASURING}
-            onDragStart={handleDragStart}
+            onDragStart={(e: DragStartEvent) => setActiveId(String(e.active.id))}
             onDragEnd={handleDragEnd}
             onDragCancel={() => setActiveId(null)}
           >
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-5">
               {dates.map((date) => {
                 const dayTasks = sortTasks(tasksByDate.get(date) ?? []);
+                const active = dayTasks.filter((t) => !t.completed);
+                const load =
+                  dayTasks.length > 0
+                    ? {
+                        count: active.length,
+                        minutes: active.reduce((s, t) => s + (t.estimatedMinutes ?? 0), 0),
+                      }
+                    : null;
                 return (
                   <DayColumn
                     key={date}
                     date={date}
                     label={dayLabel(date, today)}
-                    empty={dayTasks.length === 0}
+                    load={load}
+                    isEmpty={dayTasks.length === 0}
                   >
                     {dayTasks.map((task) => (
                       <DraggableTask
                         key={task.id}
                         task={task}
+                        today={today}
                         onToggle={toggleCompleted}
                         onDelete={deleteTask}
                       />
@@ -343,7 +419,7 @@ export default function Home() {
             <DragOverlay>
               {activeTask ? (
                 <div className="shadow-lg">
-                  <TaskCard task={activeTask} />
+                  <TaskCard task={activeTask} today={today} />
                 </div>
               ) : null}
             </DragOverlay>

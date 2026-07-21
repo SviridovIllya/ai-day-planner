@@ -45,6 +45,20 @@ export function diffDays(iso: string, fromIso: string): number {
   return Math.round((a - b) / 86_400_000);
 }
 
+// Хвилини → "45 хв" / "1 год" / "1 год 30 хв".
+export function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} хв`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${h} год` : `${h} год ${m} хв`;
+}
+
+// "DD.MM" з ISO-дати.
+export function shortDate(iso: string): string {
+  const d = parseISO(iso);
+  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 // "Сьогодні" / "Завтра" для перших двох днів, далі "Середа 23.07".
 export function dayLabel(iso: string, todayIso: string): string {
   const diff = diffDays(iso, todayIso);
