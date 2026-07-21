@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSwipeable } from "react-swipeable";
 import {
   DndContext,
   DragOverlay,
@@ -34,7 +35,7 @@ const collisionDetection: CollisionDetection = (args) => {
 const PRIORITY: Record<Priority, { label: string; stripe: string }> = {
   high: { label: "Високий пріоритет", stripe: "bg-red-500" },
   medium: { label: "Середній пріоритет", stripe: "bg-amber-500" },
-  low: { label: "Низький пріоритет", stripe: "bg-zinc-300 dark:bg-zinc-600" },
+  low: { label: "Низький пріоритет", stripe: "bg-stone-300 dark:bg-stone-600" },
 };
 
 const PRIORITY_RANK: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
@@ -76,7 +77,7 @@ function CheckButton({ checked, onToggle }: { checked: boolean; onToggle: () => 
       className={`grid h-5 w-5 shrink-0 place-items-center rounded-[6px] border transition-all duration-150 active:scale-90 ${
         checked
           ? "border-black bg-black dark:border-white dark:bg-white"
-          : "border-zinc-300 hover:border-zinc-400 dark:border-zinc-600 dark:hover:border-zinc-500"
+          : "border-stone-300 hover:border-stone-400 dark:border-stone-600 dark:hover:border-stone-500"
       }`}
     >
       <svg
@@ -117,7 +118,7 @@ function TaskCard({
 
   return (
     <div
-      className={`flex items-stretch overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 ${
+      className={`flex items-stretch overflow-hidden rounded-lg border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900 ${
         dragging ? "opacity-40" : ""
       }`}
     >
@@ -126,7 +127,7 @@ function TaskCard({
         <button
           {...handleProps}
           aria-label="Перетягнути"
-          className="shrink-0 cursor-grab touch-none px-0.5 text-base leading-none text-zinc-400 hover:text-zinc-600 active:cursor-grabbing dark:text-zinc-500 dark:hover:text-zinc-300"
+          className="shrink-0 cursor-grab touch-none px-0.5 text-base leading-none text-stone-400 hover:text-stone-600 active:cursor-grabbing dark:text-stone-500 dark:hover:text-stone-300"
         >
           ⠿
         </button>
@@ -135,14 +136,14 @@ function TaskCard({
           <p
             className={`text-sm leading-snug ${
               task.completed
-                ? "text-zinc-400 line-through dark:text-zinc-600"
-                : "text-black dark:text-zinc-50"
+                ? "text-stone-400 line-through dark:text-stone-600"
+                : "text-black dark:text-stone-50"
             }`}
           >
             {task.title}
           </p>
           {hasMeta && !task.completed && (
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-zinc-400 dark:text-zinc-500">
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-stone-400 dark:text-stone-500">
               {task.estimatedMinutes != null && <span>{formatDuration(task.estimatedMinutes)}</span>}
               {task.estimatedMinutes != null && dl && <span aria-hidden>·</span>}
               {dl && (
@@ -156,7 +157,7 @@ function TaskCard({
         <button
           onClick={() => onDelete?.(task.id)}
           aria-label="Видалити"
-          className="shrink-0 rounded px-1 text-lg leading-none text-zinc-300 transition-colors hover:text-red-500 dark:text-zinc-600"
+          className="pointer-only shrink-0 rounded px-1 text-lg leading-none text-stone-300 transition-colors hover:text-red-500 dark:text-stone-600"
         >
           ×
         </button>
@@ -164,6 +165,8 @@ function TaskCard({
     </div>
   );
 }
+
+const SWIPE_TRIGGER = 64; // px — поріг спрацювання свайпу
 
 function DraggableTask({
   task,
@@ -177,16 +180,66 @@ function DraggableTask({
   onDelete: (id: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
+  const [dx, setDx] = useState(0);
+
+  // Свайп (тільки тач): вправо — виконано, вліво — видалити.
+  const swipe = useSwipeable({
+    onSwiping: (e) => {
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        setDx(Math.max(-140, Math.min(140, e.deltaX)));
+      }
+    },
+    onSwipedRight: (e) => {
+      if (Math.abs(e.deltaX) > SWIPE_TRIGGER) onToggle(task.id);
+      setDx(0);
+    },
+    onSwipedLeft: (e) => {
+      if (Math.abs(e.deltaX) > SWIPE_TRIGGER) onDelete(task.id);
+      setDx(0);
+    },
+    onSwiped: () => setDx(0),
+    trackMouse: false,
+    preventScrollOnSwipe: true,
+    delta: 12,
+  });
+
+  const past = Math.abs(dx) > SWIPE_TRIGGER;
+
   return (
-    <div ref={setNodeRef}>
-      <TaskCard
-        task={task}
-        today={today}
-        onToggle={onToggle}
-        onDelete={onDelete}
-        handleProps={{ ...attributes, ...listeners }}
-        dragging={isDragging}
-      />
+    <div ref={setNodeRef} className="relative overflow-hidden rounded-lg">
+      {/* Підказки дій, що визирають з-під рядка під час свайпу */}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-between px-4 text-sm font-medium">
+        <span
+          className={`transition-opacity ${dx > 0 ? "opacity-100" : "opacity-0"} ${
+            past ? "text-emerald-600 dark:text-emerald-400" : "text-emerald-500/60"
+          }`}
+        >
+          ✓ {task.completed ? "Відкрити" : "Виконано"}
+        </span>
+        <span
+          className={`transition-opacity ${dx < 0 ? "opacity-100" : "opacity-0"} ${
+            past ? "text-red-600 dark:text-red-400" : "text-red-500/60"
+          }`}
+        >
+          Видалити ✕
+        </span>
+      </div>
+      <div
+        {...swipe}
+        style={{
+          transform: `translateX(${dx}px)`,
+          transition: dx === 0 ? "transform 0.2s ease" : undefined,
+        }}
+      >
+        <TaskCard
+          task={task}
+          today={today}
+          onToggle={onToggle}
+          onDelete={onDelete}
+          handleProps={{ ...attributes, ...listeners }}
+          dragging={isDragging}
+        />
+      </div>
     </div>
   );
 }
@@ -211,13 +264,13 @@ function DayColumn({
       <div className="flex items-baseline gap-2">
         <h2
           className={`text-xs font-semibold uppercase tracking-wide ${
-            isEmpty ? "text-zinc-300 dark:text-zinc-700" : "text-zinc-500 dark:text-zinc-400"
-          } ${isOver ? "text-black dark:text-zinc-50" : ""}`}
+            isEmpty ? "text-stone-300 dark:text-stone-700" : "text-stone-500 dark:text-stone-400"
+          } ${isOver ? "text-black dark:text-stone-50" : ""}`}
         >
           {label}
         </h2>
         {load && (
-          <span className="text-xs text-zinc-400 dark:text-zinc-500">
+          <span className="text-xs text-stone-400 dark:text-stone-500">
             {load.count} {pluralTasks(load.count)}
             {load.minutes > 0 && <> · ~{formatDuration(load.minutes)}</>}
             {overloaded && (
@@ -231,11 +284,11 @@ function DayColumn({
       <div
         ref={setNodeRef}
         className={`flex flex-col gap-2 rounded-lg transition-colors ${
-          isOver ? "bg-zinc-200/60 p-1 ring-2 ring-black/30 dark:bg-zinc-800/60 dark:ring-white/30" : ""
+          isOver ? "bg-stone-200/60 p-1 ring-2 ring-black/30 dark:bg-stone-800/60 dark:ring-white/30" : ""
         }`}
       >
         {isEmpty ? (
-          <div className="rounded-md border border-dashed border-zinc-200 py-1.5 text-center text-[11px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-700">
+          <div className="rounded-md border border-dashed border-stone-200 py-1.5 text-center text-[11px] text-stone-300 dark:border-stone-800 dark:text-stone-700">
             {isOver ? "Відпусти тут" : "—"}
           </div>
         ) : (
@@ -337,13 +390,13 @@ export default function Home() {
   const activeTask = tasks.find((t) => t.id === activeId) ?? null;
 
   return (
-    <div className="min-h-full flex-1 bg-zinc-50 dark:bg-black">
+    <div className="min-h-full flex-1 bg-stone-50 dark:bg-stone-950">
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10 sm:py-16">
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
+          <h1 className="font-display text-3xl font-semibold tracking-tight text-black dark:text-stone-50">
             AI Day Planner
           </h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
             Вивали все з голови — AI розкладе це на задачі по днях.
           </p>
         </header>
@@ -354,12 +407,12 @@ export default function Home() {
             onChange={(e) => setText(e.target.value)}
             placeholder="Що в голові? Напр.: купити молоко, подзвонити клієнту до п'ятниці, зробити презентацію…"
             rows={3}
-            className="w-full resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-black outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            className="w-full resize-y rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-black outline-none focus:border-stone-500 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-50"
           />
           <button
             onClick={handleParse}
             disabled={loading || !text.trim()}
-            className="self-start rounded-full bg-black px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+            className="self-start rounded-full bg-black px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-black dark:hover:bg-stone-200"
           >
             {loading ? "Розбираю…" : "Розібрати"}
           </button>
@@ -367,10 +420,10 @@ export default function Home() {
         </section>
 
         {tasks.length === 0 ? (
-          <section className="mt-4 flex flex-col items-center gap-2 rounded-xl border border-dashed border-zinc-300 py-12 text-center dark:border-zinc-700">
+          <section className="mt-4 flex flex-col items-center gap-2 rounded-xl border border-dashed border-stone-300 py-12 text-center dark:border-stone-700">
             <div className="text-4xl">🧠</div>
-            <p className="font-medium text-black dark:text-zinc-50">Порожньо — і це добре</p>
-            <p className="max-w-xs text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="font-medium text-black dark:text-stone-50">Порожньо — і це добре</p>
+            <p className="max-w-xs text-sm text-stone-500 dark:text-stone-400">
               Вивали в поле вище все, що крутиться в голові, і натисни «Розібрати».
               AI перетворить це на задачі й розкладе по днях.
             </p>
