@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm -v)",
+      "Bash(pnpm -v)",
+      "Bash(git --version)",
+      "Bash(gh --version)",
+      "Bash(gh auth *)",
+      "Read(//opt/homebrew/bin/**)",
+      "Read(//Users/xxx/**)",
+      "Read(//Users/xxx/.nvm/versions/**)",
+      "Read(//Users/xxx/.volta/**)",
+      "Bash(brew --version)",
+      "Bash(git config *)"
+    ]
+  }
+}
