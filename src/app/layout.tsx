@@ -20,8 +20,8 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "AI Day Planner",
-  description: "Plan your day with AI.",
+  title: "Spill — AI-планер дня",
+  description: "Вивали все з голови — AI перетворить хаос на впорядкований план дня.",
 };
 
 export default function RootLayout({

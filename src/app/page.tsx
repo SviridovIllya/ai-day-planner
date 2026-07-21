@@ -299,6 +299,20 @@ function DayColumn({
   );
 }
 
+// Лого «Spill»: амбер-крапки розсипу осідають у рівні рядки списку.
+function Logo() {
+  return (
+    <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden className="shrink-0">
+      <rect width="32" height="32" rx="8" fill="#292524" />
+      <circle cx="9" cy="9" r="2" fill="#f59e0b" />
+      <circle cx="16" cy="6.5" r="2" fill="#f59e0b" />
+      <circle cx="23" cy="9.5" r="2" fill="#f59e0b" />
+      <rect x="8" y="17" width="16" height="2.6" rx="1.3" fill="#fafaf9" />
+      <rect x="8" y="22.5" width="11" height="2.6" rx="1.3" fill="#fafaf9" />
+    </svg>
+  );
+}
+
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [text, setText] = useState("");
@@ -393,10 +407,13 @@ export default function Home() {
     <div className="min-h-full flex-1 bg-stone-50 dark:bg-stone-950">
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10 sm:py-16">
         <header>
-          <h1 className="font-display text-3xl font-semibold tracking-tight text-black dark:text-stone-50">
-            AI Day Planner
-          </h1>
-          <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+          <div className="flex items-center gap-2.5">
+            <Logo />
+            <h1 className="font-display text-3xl font-semibold tracking-tight text-black dark:text-stone-50">
+              Spill
+            </h1>
+          </div>
+          <p className="mt-1.5 text-sm text-stone-500 dark:text-stone-400">
             Вивали все з голови — AI розкладе це на задачі по днях.
           </p>
         </header>
