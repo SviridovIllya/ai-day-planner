@@ -1,64 +1,142 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import type { Priority, Task } from "@/lib/types";
+
+const STORAGE_KEY = "ai-day-planner:tasks";
+
+const PRIORITY_STYLES: Record<Priority, { label: string; className: string }> = {
+  high: { label: "Високий", className: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" },
+  medium: { label: "Середній", className: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" },
+  low: { label: "Низький", className: "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400" },
+};
 
 export default function Home() {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Не записуємо в localStorage до першого читання (щоб не затерти збережене порожнім масивом).
+  const hydrated = useRef(false);
+
+  // T2: читання при монтуванні
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) setTasks(JSON.parse(stored));
+    } catch {
+      // пошкоджені дані — ігноруємо
+    }
+    hydrated.current = true;
+  }, []);
+
+  // T2: запис при кожній зміні
+  useEffect(() => {
+    if (!hydrated.current) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+  }, [tasks]);
+
+  async function handleParse() {
+    if (!text.trim() || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/parse-tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Помилка запиту");
+      // T4: додаємо до існуючого списку, не замінюємо
+      setTasks((prev) => [...prev, ...(data.tasks as Task[])]);
+      setText("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Невідома помилка");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function toggleCompleted(id: string) {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)),
+    );
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="min-h-full flex-1 bg-zinc-50 dark:bg-black">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10 sm:py-16">
+        <header>
+          <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
+            AI Day Planner
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            Вивали все з голови — AI розкладе це на задачі.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+        </header>
+
+        <section className="flex flex-col gap-3">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Що в голові? Напр.: купити молоко, подзвонити клієнту до п'ятниці, зробити презентацію…"
+            rows={4}
+            className="w-full resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-black outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+          />
+          <button
+            onClick={handleParse}
+            disabled={loading || !text.trim()}
+            className="self-start rounded-full bg-black px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+            {loading ? "Розбираю…" : "Розібрати"}
+          </button>
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        </section>
+
+        <section className="flex flex-col gap-2">
+          {tasks.length === 0 ? (
+            <p className="py-8 text-center text-sm text-zinc-400">
+              Задач поки немає. Введи текст вище й натисни «Розібрати».
+            </p>
+          ) : (
+            tasks.map((task) => {
+              const p = PRIORITY_STYLES[task.priority];
+              return (
+                <label
+                  key={task.id}
+                  className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-900"
+                >
+                  <input
+                    type="checkbox"
+                    checked={task.completed}
+                    onChange={() => toggleCompleted(task.id)}
+                    className="h-4 w-4 shrink-0 accent-black dark:accent-white"
+                  />
+                  <span
+                    className={`flex-1 text-sm ${
+                      task.completed
+                        ? "text-zinc-400 line-through dark:text-zinc-600"
+                        : "text-black dark:text-zinc-50"
+                    }`}
+                  >
+                    {task.title}
+                  </span>
+                  {task.estimatedMinutes != null && (
+                    <span className="shrink-0 text-xs text-zinc-400">
+                      {task.estimatedMinutes} хв
+                    </span>
+                  )}
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${p.className}`}
+                  >
+                    {p.label}
+                  </span>
+                </label>
+              );
+            })
+          )}
+        </section>
       </main>
     </div>
   );
