@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useSwipeable } from "react-swipeable";
 import {
   DndContext,
@@ -19,8 +19,11 @@ import {
 } from "@dnd-kit/core";
 import type { Priority, Task } from "@/lib/types";
 import { addDays, dayLabel, diffDays, formatDuration, localToday, shortDate } from "@/lib/dates";
+import { STR, pluralTasks, type Lang } from "@/lib/i18n";
 
 const STORAGE_KEY = "ai-day-planner:tasks";
+const LANG_KEY = "ai-day-planner:lang";
+const LangCtx = createContext<Lang>("uk");
 const HORIZON_DAYS = 7;
 const OVERLOAD_MINUTES = 8 * 60; // > 8 год на день → мʼяке попередження
 
@@ -32,14 +35,10 @@ const collisionDetection: CollisionDetection = (args) => {
   return within.length > 0 ? within : closestCenter(args);
 };
 
-const PRIORITY: Record<Priority, { label: string; stripe: string; text: string }> = {
-  high: { label: "Високий", stripe: "bg-red-500", text: "text-red-600 dark:text-red-400" },
-  medium: { label: "Середній", stripe: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" },
-  low: {
-    label: "Низький",
-    stripe: "bg-stone-300 dark:bg-stone-600",
-    text: "text-stone-500 dark:text-stone-400",
-  },
+const PRIORITY: Record<Priority, { stripe: string; text: string }> = {
+  high: { stripe: "bg-red-500", text: "text-red-600 dark:text-red-400" },
+  medium: { stripe: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" },
+  low: { stripe: "bg-stone-300 dark:bg-stone-600", text: "text-stone-500 dark:text-stone-400" },
 };
 
 const PRIORITY_RANK: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
@@ -60,30 +59,28 @@ function sortTasks(tasks: Task[]): Task[] {
   });
 }
 
-function pluralTasks(n: number): string {
-  const a = n % 10;
-  const b = n % 100;
-  if (a === 1 && b !== 11) return "задача";
-  if (a >= 2 && a <= 4 && (b < 10 || b >= 20)) return "задачі";
-  return "задач";
-}
-
-function deadlineChip(deadline: string, today: string): { label: string; urgent: boolean } {
+function deadlineChip(
+  deadline: string,
+  today: string,
+  lang: Lang,
+): { label: string; urgent: boolean } {
+  const s = STR[lang];
   const diff = diffDays(deadline, today);
-  if (diff < 0) return { label: "протерміновано", urgent: true };
-  if (diff === 0) return { label: "сьогодні", urgent: true };
-  if (diff === 1) return { label: "до завтра", urgent: false };
-  return { label: `до ${shortDate(deadline)}`, urgent: false };
+  if (diff < 0) return { label: s.dueOverdue, urgent: true };
+  if (diff === 0) return { label: s.dueToday, urgent: true };
+  if (diff === 1) return { label: s.dueTomorrow, urgent: false };
+  return { label: `${s.duePrefix} ${shortDate(deadline)}`, urgent: false };
 }
 
 // Анімований чекбокс (галочка «пружинить»).
 function CheckButton({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
+  const t = STR[useContext(LangCtx)];
   return (
     <button
       type="button"
       role="checkbox"
       aria-checked={checked}
-      aria-label={checked ? "Позначити як невиконане" : "Позначити виконаним"}
+      aria-label={checked ? t.markUndone : t.markDone}
       onClick={onToggle}
       className={`grid h-5 w-5 shrink-0 place-items-center rounded-[6px] border transition-all duration-150 active:scale-90 ${
         checked
@@ -119,8 +116,10 @@ function DeadlineControl({
   today: string;
   onSetDeadline?: (id: string, deadline: string | null) => void;
 }) {
+  const lang = useContext(LangCtx);
+  const t = STR[lang];
   const inputRef = useRef<HTMLInputElement>(null);
-  const dl = task.deadline ? deadlineChip(task.deadline, today) : null;
+  const dl = task.deadline ? deadlineChip(task.deadline, today, lang) : null;
   const cls = dl
     ? dl.urgent
       ? "font-medium text-red-500 dark:text-red-400"
@@ -136,10 +135,10 @@ function DeadlineControl({
       <button
         type="button"
         onClick={() => inputRef.current?.showPicker?.()}
-        aria-label={dl ? `Дедлайн: ${dl.label}. Натисни, щоб змінити.` : "Додати дедлайн"}
+        aria-label={dl ? dl.label : t.addDue}
         className={`rounded transition-colors hover:text-stone-600 dark:hover:text-stone-300 ${cls}`}
       >
-        {dl ? dl.label : "+ термін"}
+        {dl ? dl.label : t.addDue}
       </button>
       <input
         ref={inputRef}
@@ -174,8 +173,11 @@ function TaskCard({
   handleProps?: Record<string, unknown>;
   dragging?: boolean;
 }) {
+  const lang = useContext(LangCtx);
+  const t = STR[lang];
   const p = PRIORITY[task.priority];
-  const dl = task.deadline ? deadlineChip(task.deadline, today) : null;
+  const prioLabel = t.prio[task.priority];
+  const dl = task.deadline ? deadlineChip(task.deadline, today, lang) : null;
   const showDeadline = dl != null || onSetDeadline != null;
   const showMeta = !task.completed && (task.estimatedMinutes != null || showDeadline);
 
@@ -192,7 +194,7 @@ function TaskCard({
       <div className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2.5">
         <button
           {...handleProps}
-          aria-label="Перетягнути"
+          aria-label={t.dragAria}
           className="shrink-0 cursor-grab touch-none px-0.5 text-base leading-none text-stone-400 hover:text-stone-600 active:cursor-grabbing dark:text-stone-500 dark:hover:text-stone-300"
         >
           ⠿
@@ -210,7 +212,9 @@ function TaskCard({
           </p>
           {showMeta && (
             <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-stone-400 dark:text-stone-500">
-              {task.estimatedMinutes != null && <span>{formatDuration(task.estimatedMinutes)}</span>}
+              {task.estimatedMinutes != null && (
+                <span>{formatDuration(task.estimatedMinutes, lang)}</span>
+              )}
               {task.estimatedMinutes != null && showDeadline && <span aria-hidden>·</span>}
               <DeadlineControl task={task} today={today} onSetDeadline={onSetDeadline} />
             </div>
@@ -220,15 +224,15 @@ function TaskCard({
           <button
             type="button"
             onClick={() => onCyclePriority(task.id)}
-            aria-label={`Пріоритет: ${p.label}. Натисни, щоб змінити.`}
+            aria-label={prioLabel}
             className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium transition active:scale-90 hover:bg-stone-100 dark:hover:bg-stone-800 ${p.text}`}
           >
-            {p.label}
+            {prioLabel}
           </button>
         )}
         <button
           onClick={() => onDelete?.(task.id)}
-          aria-label="Видалити"
+          aria-label={t.deleteAria}
           className="pointer-only shrink-0 rounded px-1 text-lg leading-none text-stone-300 transition-colors hover:text-red-500 dark:text-stone-600"
         >
           ×
@@ -255,6 +259,7 @@ function DraggableTask({
   onCyclePriority: (id: string) => void;
   onSetDeadline: (id: string, deadline: string | null) => void;
 }) {
+  const t = STR[useContext(LangCtx)];
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   const [dx, setDx] = useState(0);
 
@@ -290,14 +295,14 @@ function DraggableTask({
             past ? "text-emerald-600 dark:text-emerald-400" : "text-emerald-500/60"
           }`}
         >
-          ✓ {task.completed ? "Відкрити" : "Виконано"}
+          ✓ {task.completed ? t.swipeReopen : t.swipeDone}
         </span>
         <span
           className={`transition-opacity ${dx < 0 ? "opacity-100" : "opacity-0"} ${
             past ? "text-red-600 dark:text-red-400" : "text-red-500/60"
           }`}
         >
-          Видалити ✕
+          {t.swipeDelete} ✕
         </span>
       </div>
       <div
@@ -335,6 +340,8 @@ function DayColumn({
   isEmpty: boolean;
   children: React.ReactNode;
 }) {
+  const t = STR[useContext(LangCtx)];
+  const lang = useContext(LangCtx);
   const { setNodeRef, isOver } = useDroppable({ id: date });
   const overloaded = load != null && load.minutes > OVERLOAD_MINUTES;
   const ratio = load ? load.minutes / OVERLOAD_MINUTES : 0;
@@ -353,11 +360,11 @@ function DayColumn({
           </h2>
           {load && (
             <span className="text-xs text-stone-400 dark:text-stone-500">
-              {load.count} {pluralTasks(load.count)}
-              {load.minutes > 0 && <> · ~{formatDuration(load.minutes)}</>}
+              {load.count} {pluralTasks(load.count, lang)}
+              {load.minutes > 0 && <> · ~{formatDuration(load.minutes, lang)}</>}
               {overloaded && (
                 <span className="ml-1 font-medium text-red-600 dark:text-red-400">
-                  · перевантажений
+                  · {t.overloaded}
                 </span>
               )}
             </span>
@@ -385,7 +392,7 @@ function DayColumn({
       >
         {isEmpty ? (
           <div className="rounded-md border border-dashed border-stone-200 py-1.5 text-center text-[11px] text-stone-300 dark:border-stone-800 dark:text-stone-700">
-            {isOver ? "Відпусти тут" : "—"}
+            {isOver ? t.dropHere : "—"}
           </div>
         ) : (
           children
@@ -463,6 +470,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [lang, setLang] = useState<Lang>("uk");
   const [listening, setListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -470,6 +478,7 @@ export default function Home() {
   const hydrated = useRef(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const t = STR[lang];
 
   useEffect(() => {
     try {
@@ -478,8 +487,18 @@ export default function Home() {
     } catch {
       // пошкоджені дані — ігноруємо
     }
+    const storedLang = localStorage.getItem(LANG_KEY);
+    if (storedLang === "en" || storedLang === "uk") setLang(storedLang);
     hydrated.current = true;
   }, []);
+
+  function toggleLang() {
+    setLang((prev) => {
+      const next: Lang = prev === "uk" ? "en" : "uk";
+      localStorage.setItem(LANG_KEY, next);
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (!hydrated.current) return;
@@ -532,6 +551,7 @@ export default function Home() {
       return;
     }
     voiceBaseRef.current = text;
+    rec.lang = lang === "en" ? "en-US" : "uk-UA";
     try {
       rec.start();
       setListening(true);
@@ -551,7 +571,7 @@ export default function Home() {
         body: JSON.stringify({ text, today: localToday() }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Помилка запиту");
+      if (!res.ok) throw new Error(data.error ?? t.requestError);
       setTasks((prev) => {
         const seen = new Set(
           prev.filter((t) => !t.completed).map((t) => t.title.trim().toLowerCase()),
@@ -567,7 +587,7 @@ export default function Home() {
       });
       setText("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Невідома помилка");
+      setError(err instanceof Error ? err.message : t.unknownError);
     } finally {
       setLoading(false);
     }
@@ -616,25 +636,34 @@ export default function Home() {
   const activeTask = tasks.find((t) => t.id === activeId) ?? null;
 
   return (
-    <div className="min-h-full flex-1 bg-stone-50 dark:bg-stone-950">
+    <LangCtx.Provider value={lang}>
+      <div className="min-h-full flex-1 bg-stone-50 dark:bg-stone-950">
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10 sm:py-16">
         <header>
-          <div className="flex items-center gap-2.5">
-            <Logo />
-            <h1 className="font-display text-3xl font-semibold tracking-tight text-black dark:text-stone-50">
-              Spill
-            </h1>
+          <div className="flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5">
+              <Logo />
+              <h1 className="font-display text-3xl font-semibold tracking-tight text-black dark:text-stone-50">
+                Spill
+              </h1>
+            </div>
+            <button
+              type="button"
+              onClick={toggleLang}
+              aria-label="Language"
+              className="shrink-0 rounded-full border border-stone-300 px-3 py-1 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+            >
+              {t.switchTo}
+            </button>
           </div>
-          <p className="mt-1.5 text-sm text-stone-500 dark:text-stone-400">
-            Вивали все з голови — AI розкладе це на задачі по днях.
-          </p>
+          <p className="mt-1.5 text-sm text-stone-500 dark:text-stone-400">{t.tagline}</p>
         </header>
 
         <section className="flex flex-col gap-3">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Що в голові? Напр.: купити молоко, подзвонити клієнту до п'ятниці, зробити презентацію…"
+            placeholder={t.placeholder}
             rows={3}
             className="w-full resize-y rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-black outline-none focus:border-stone-500 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-50"
           />
@@ -644,13 +673,13 @@ export default function Home() {
               disabled={loading || !text.trim()}
               className="rounded-full bg-black px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-black dark:hover:bg-stone-200"
             >
-              {loading ? "Планую…" : "Спланувати"}
+              {loading ? t.planning : t.plan}
             </button>
             {voiceSupported && (
               <button
                 type="button"
                 onClick={toggleVoice}
-                aria-label={listening ? "Зупинити диктування" : "Диктувати голосом"}
+                aria-label={listening ? t.stopDictate : t.dictate}
                 className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                   listening
                     ? "bg-red-500 text-white"
@@ -662,7 +691,7 @@ export default function Home() {
                 ) : (
                   <MicIcon />
                 )}
-                {listening ? "Слухаю…" : "Голос"}
+                {listening ? t.listening : t.voice}
               </button>
             )}
           </div>
@@ -672,11 +701,8 @@ export default function Home() {
         {tasks.length === 0 ? (
           <section className="mt-4 flex flex-col items-center gap-2 rounded-xl border border-dashed border-stone-300 py-12 text-center dark:border-stone-700">
             <div className="text-4xl">🧠</div>
-            <p className="font-medium text-black dark:text-stone-50">Порожньо — і це добре</p>
-            <p className="max-w-xs text-sm text-stone-500 dark:text-stone-400">
-              Напиши все, що крутиться в голові — купою, без порядку. AI розбере
-              це на задачі й розкладе по днях.
-            </p>
+            <p className="font-medium text-black dark:text-stone-50">{t.emptyTitle}</p>
+            <p className="max-w-xs text-sm text-stone-500 dark:text-stone-400">{t.emptyBody}</p>
           </section>
         ) : (
           <DndContext
@@ -702,7 +728,7 @@ export default function Home() {
                   <DayColumn
                     key={date}
                     date={date}
-                    label={dayLabel(date, today)}
+                    label={dayLabel(date, today, lang)}
                     load={load}
                     isEmpty={dayTasks.length === 0}
                   >
@@ -731,6 +757,7 @@ export default function Home() {
           </DndContext>
         )}
       </main>
-    </div>
+      </div>
+    </LangCtx.Provider>
   );
 }

@@ -1,15 +1,7 @@
 // Робота з датами у форматі YYYY-MM-DD в ЛОКАЛЬНОМУ часовому поясі.
 // Уникаємо new Date("YYYY-MM-DD") — воно парситься як UTC і може зсунути день.
 
-const WEEKDAYS = [
-  "Неділя",
-  "Понеділок",
-  "Вівторок",
-  "Середа",
-  "Четвер",
-  "П'ятниця",
-  "Субота",
-];
+import { STR, type Lang } from "./i18n";
 
 export function isoDate(d: Date): string {
   const y = d.getFullYear();
@@ -45,12 +37,13 @@ export function diffDays(iso: string, fromIso: string): number {
   return Math.round((a - b) / 86_400_000);
 }
 
-// Хвилини → "45 хв" / "1 год" / "1 год 30 хв".
-export function formatDuration(minutes: number): string {
-  if (minutes < 60) return `${minutes} хв`;
+// Хвилини → "45 хв" / "1 год 30 хв" (або "45 min" / "1 h 30 min").
+export function formatDuration(minutes: number, lang: Lang = "uk"): string {
+  const { minShort, hourShort } = STR[lang];
+  if (minutes < 60) return `${minutes} ${minShort}`;
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
-  return m === 0 ? `${h} год` : `${h} год ${m} хв`;
+  return m === 0 ? `${h} ${hourShort}` : `${h} ${hourShort} ${m} ${minShort}`;
 }
 
 // "DD.MM" з ISO-дати.
@@ -59,13 +52,13 @@ export function shortDate(iso: string): string {
   return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-// "Сьогодні" / "Завтра" для перших двох днів, далі "Середа 23.07".
-export function dayLabel(iso: string, todayIso: string): string {
+// "Сьогодні" / "Завтра" для перших двох днів, далі "Середа 23.07" (або EN).
+export function dayLabel(iso: string, todayIso: string, lang: Lang = "uk"): string {
   const diff = diffDays(iso, todayIso);
-  if (diff === 0) return "Сьогодні";
-  if (diff === 1) return "Завтра";
+  if (diff === 0) return STR[lang].today;
+  if (diff === 1) return STR[lang].tomorrow;
   const d = parseISO(iso);
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
-  return `${WEEKDAYS[d.getDay()]} ${dd}.${mm}`;
+  return `${STR[lang].weekdays[d.getDay()]} ${dd}.${mm}`;
 }
