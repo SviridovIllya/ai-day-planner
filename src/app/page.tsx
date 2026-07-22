@@ -118,7 +118,6 @@ function DeadlineControl({
 }) {
   const lang = useContext(LangCtx);
   const t = STR[lang];
-  const inputRef = useRef<HTMLInputElement>(null);
   const dl = task.deadline ? deadlineChip(task.deadline, today, lang) : null;
   const cls = dl
     ? dl.urgent
@@ -130,25 +129,18 @@ function DeadlineControl({
     return dl ? <span className={cls}>{dl.label}</span> : null;
   }
 
+  const label = dl ? dl.label : t.addDue;
   return (
-    <span className="relative inline-flex">
-      <button
-        type="button"
-        onClick={() => inputRef.current?.showPicker?.()}
-        aria-label={dl ? dl.label : t.addDue}
-        className={`rounded transition-colors hover:text-stone-600 dark:hover:text-stone-300 ${cls}`}
-      >
-        {dl ? dl.label : t.addDue}
-      </button>
+    <span className="relative -mx-1 inline-flex items-center rounded px-1">
+      <span className={cls}>{label}</span>
+      {/* Прозорий date-input поверх мітки: тап відкриває нативний пікер на всіх платформах. */}
       <input
-        ref={inputRef}
         type="date"
         value={task.deadline ?? ""}
         min={today}
         onChange={(e) => onSetDeadline(task.id, e.target.value || null)}
-        tabIndex={-1}
-        aria-hidden
-        className="pointer-events-none absolute bottom-0 left-0 h-0 w-0 opacity-0"
+        aria-label={label}
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
       />
     </span>
   );
