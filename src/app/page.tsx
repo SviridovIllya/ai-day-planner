@@ -328,6 +328,54 @@ function DayColumn({
   );
 }
 
+// Мінімальні типи для Web Speech API (немає у стандартному DOM-lib).
+interface SpeechAlternative {
+  transcript: string;
+}
+interface SpeechResult {
+  readonly length: number;
+  isFinal: boolean;
+  [index: number]: SpeechAlternative;
+}
+interface SpeechResultList {
+  readonly length: number;
+  [index: number]: SpeechResult;
+}
+interface SpeechRecognitionEventLike {
+  results: SpeechResultList;
+}
+interface SpeechRecognitionLike {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start(): void;
+  stop(): void;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+}
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+
+function MicIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+      <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+      <line x1="12" y1="18" x2="12" y2="22" />
+    </svg>
+  );
+}
+
 // Лого «Spill»: амбер-крапки розсипу осідають у рівні рядки списку.
 function Logo() {
   return (
@@ -348,6 +396,10 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [listening, setListening] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const voiceBaseRef = useRef("");
   const hydrated = useRef(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -366,6 +418,60 @@ export default function Home() {
     if (!hydrated.current) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
   }, [tasks]);
+
+  // Голосовий ввід (Web Speech API) — апгрейд поверх тексту, лише де підтримується.
+  useEffect(() => {
+    const w = window as unknown as {
+      SpeechRecognition?: SpeechRecognitionCtor;
+      webkitSpeechRecognition?: SpeechRecognitionCtor;
+    };
+    const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+    if (!Ctor) return;
+    setVoiceSupported(true);
+    const rec = new Ctor();
+    rec.lang = "uk-UA";
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.onresult = (event) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      const base = voiceBaseRef.current;
+      const sep = base && !base.endsWith(" ") ? " " : "";
+      setText(base + sep + transcript);
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    recognitionRef.current = rec;
+    return () => {
+      rec.onresult = null;
+      rec.onend = null;
+      rec.onerror = null;
+      try {
+        rec.stop();
+      } catch {
+        // не запущено — ігноруємо
+      }
+    };
+  }, []);
+
+  function toggleVoice() {
+    const rec = recognitionRef.current;
+    if (!rec) return;
+    if (listening) {
+      rec.stop();
+      setListening(false);
+      return;
+    }
+    voiceBaseRef.current = text;
+    try {
+      rec.start();
+      setListening(true);
+    } catch {
+      setListening(false);
+    }
+  }
 
   async function handleParse() {
     if (!text.trim() || loading) return;
@@ -461,13 +567,34 @@ export default function Home() {
             rows={3}
             className="w-full resize-y rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-black outline-none focus:border-stone-500 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-50"
           />
-          <button
-            onClick={handleParse}
-            disabled={loading || !text.trim()}
-            className="self-start rounded-full bg-black px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-black dark:hover:bg-stone-200"
-          >
-            {loading ? "Розбираю…" : "Розібрати"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleParse}
+              disabled={loading || !text.trim()}
+              className="rounded-full bg-black px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-black dark:hover:bg-stone-200"
+            >
+              {loading ? "Розбираю…" : "Розібрати"}
+            </button>
+            {voiceSupported && (
+              <button
+                type="button"
+                onClick={toggleVoice}
+                aria-label={listening ? "Зупинити диктування" : "Диктувати голосом"}
+                className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                  listening
+                    ? "bg-red-500 text-white"
+                    : "border border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+                }`}
+              >
+                {listening ? (
+                  <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-white" />
+                ) : (
+                  <MicIcon />
+                )}
+                {listening ? "Слухаю…" : "Голос"}
+              </button>
+            )}
+          </div>
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         </section>
 
