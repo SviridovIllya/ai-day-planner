@@ -51,6 +51,45 @@ function nextPriority(p: Priority): Priority {
   return NEXT_PRIORITY[p];
 }
 
+// Екранування спецсимволів для iCalendar (RFC 5545).
+function icsEscape(s: string): string {
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\r?\n/g, "\\n");
+}
+
+// Будуємо .ics: кожна задача — all-day подія на її день (у задач нема часу доби).
+function buildICS(tasks: Task[]): string {
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Spill//AI Day Planner//UK",
+    "CALSCALE:GREGORIAN",
+  ];
+  for (const t of tasks) {
+    const start = t.scheduledDate.replace(/-/g, "");
+    const end = addDays(t.scheduledDate, 1).replace(/-/g, ""); // DTEND для all-day — наступний день
+    const meta = [`Пріоритет: ${PRIORITY[t.priority].label}`];
+    if (t.estimatedMinutes != null) meta.push(`~${formatDuration(t.estimatedMinutes)}`);
+    if (t.deadline) meta.push(`дедлайн ${shortDate(t.deadline)}`);
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:${t.id}@spill-planner`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${start}`,
+      `DTEND;VALUE=DATE:${end}`,
+      `SUMMARY:${icsEscape(t.title)}`,
+      `DESCRIPTION:${icsEscape(meta.join(" · "))}`,
+      "END:VEVENT",
+    );
+  }
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
+}
+
 function sortTasks(tasks: Task[]): Task[] {
   return [...tasks].sort((x, y) => {
     if (x.completed !== y.completed) return x.completed ? 1 : -1; // виконані — донизу
@@ -591,6 +630,20 @@ export default function Home() {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, deadline } : t)));
   }
 
+  function exportICS() {
+    const active = tasks.filter((t) => !t.completed);
+    if (active.length === 0) return;
+    const blob = new Blob([buildICS(active)], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "spill-plan.ics";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   function handleDragEnd(e: DragEndEvent) {
     setActiveId(null);
     const { active, over } = e;
@@ -679,7 +732,17 @@ export default function Home() {
             </p>
           </section>
         ) : (
-          <DndContext
+          <div className="flex flex-col gap-4">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={exportICS}
+                className="flex items-center gap-1.5 rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+              >
+                📅 Додати в календар
+              </button>
+            </div>
+            <DndContext
             sensors={sensors}
             collisionDetection={collisionDetection}
             measuring={MEASURING}
@@ -728,7 +791,8 @@ export default function Home() {
                 </div>
               ) : null}
             </DragOverlay>
-          </DndContext>
+            </DndContext>
+          </div>
         )}
       </main>
     </div>
