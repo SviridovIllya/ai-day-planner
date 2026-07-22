@@ -108,12 +108,60 @@ function CheckButton({ checked, onToggle }: { checked: boolean; onToggle: () => 
   );
 }
 
+// Дедлайн: чіп із терміном (червоний, якщо сьогодні/протерміновано) або «+ термін».
+// Тап відкриває нативний date-picker; порожнє значення прибирає дедлайн.
+function DeadlineControl({
+  task,
+  today,
+  onSetDeadline,
+}: {
+  task: Task;
+  today: string;
+  onSetDeadline?: (id: string, deadline: string | null) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dl = task.deadline ? deadlineChip(task.deadline, today) : null;
+  const cls = dl
+    ? dl.urgent
+      ? "font-medium text-red-500 dark:text-red-400"
+      : "text-stone-500 dark:text-stone-400"
+    : "text-stone-300 dark:text-stone-600";
+
+  if (!onSetDeadline) {
+    return dl ? <span className={cls}>{dl.label}</span> : null;
+  }
+
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => inputRef.current?.showPicker?.()}
+        aria-label={dl ? `Дедлайн: ${dl.label}. Натисни, щоб змінити.` : "Додати дедлайн"}
+        className={`rounded transition-colors hover:text-stone-600 dark:hover:text-stone-300 ${cls}`}
+      >
+        {dl ? dl.label : "+ термін"}
+      </button>
+      <input
+        ref={inputRef}
+        type="date"
+        value={task.deadline ?? ""}
+        min={today}
+        onChange={(e) => onSetDeadline(task.id, e.target.value || null)}
+        tabIndex={-1}
+        aria-hidden
+        className="pointer-events-none absolute bottom-0 left-0 h-0 w-0 opacity-0"
+      />
+    </span>
+  );
+}
+
 function TaskCard({
   task,
   today,
   onToggle,
   onDelete,
   onCyclePriority,
+  onSetDeadline,
   handleProps,
   dragging,
 }: {
@@ -122,12 +170,14 @@ function TaskCard({
   onToggle?: (id: string) => void;
   onDelete?: (id: string) => void;
   onCyclePriority?: (id: string) => void;
+  onSetDeadline?: (id: string, deadline: string | null) => void;
   handleProps?: Record<string, unknown>;
   dragging?: boolean;
 }) {
   const p = PRIORITY[task.priority];
   const dl = task.deadline ? deadlineChip(task.deadline, today) : null;
-  const hasMeta = task.estimatedMinutes != null || dl != null;
+  const showDeadline = dl != null || onSetDeadline != null;
+  const showMeta = !task.completed && (task.estimatedMinutes != null || showDeadline);
 
   return (
     <div
@@ -158,15 +208,11 @@ function TaskCard({
           >
             {task.title}
           </p>
-          {hasMeta && !task.completed && (
+          {showMeta && (
             <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-stone-400 dark:text-stone-500">
               {task.estimatedMinutes != null && <span>{formatDuration(task.estimatedMinutes)}</span>}
-              {task.estimatedMinutes != null && dl && <span aria-hidden>·</span>}
-              {dl && (
-                <span className={dl.urgent ? "font-medium text-red-500 dark:text-red-400" : ""}>
-                  {dl.label}
-                </span>
-              )}
+              {task.estimatedMinutes != null && showDeadline && <span aria-hidden>·</span>}
+              <DeadlineControl task={task} today={today} onSetDeadline={onSetDeadline} />
             </div>
           )}
         </div>
@@ -200,12 +246,14 @@ function DraggableTask({
   onToggle,
   onDelete,
   onCyclePriority,
+  onSetDeadline,
 }: {
   task: Task;
   today: string;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   onCyclePriority: (id: string) => void;
+  onSetDeadline: (id: string, deadline: string | null) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   const [dx, setDx] = useState(0);
@@ -265,6 +313,7 @@ function DraggableTask({
           onToggle={onToggle}
           onDelete={onDelete}
           onCyclePriority={onCyclePriority}
+          onSetDeadline={onSetDeadline}
           handleProps={{ ...attributes, ...listeners }}
           dragging={isDragging}
         />
@@ -538,6 +587,10 @@ export default function Home() {
     );
   }
 
+  function setDeadline(id: string, deadline: string | null) {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, deadline } : t)));
+  }
+
   function handleDragEnd(e: DragEndEvent) {
     setActiveId(null);
     const { active, over } = e;
@@ -661,6 +714,7 @@ export default function Home() {
                         onToggle={toggleCompleted}
                         onDelete={deleteTask}
                         onCyclePriority={cyclePriority}
+                        onSetDeadline={setDeadline}
                       />
                     ))}
                   </DayColumn>
