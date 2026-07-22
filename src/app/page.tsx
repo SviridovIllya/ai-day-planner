@@ -591,7 +591,7 @@ export default function Home() {
               disabled={loading || !text.trim()}
               className="rounded-full bg-black px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-black dark:hover:bg-stone-200"
             >
-              {loading ? "Розбираю…" : "Розібрати"}
+              {loading ? "Планую…" : "Спланувати"}
             </button>
             {voiceSupported && (
               <button
@@ -621,7 +621,7 @@ export default function Home() {
             <div className="text-4xl">🧠</div>
             <p className="font-medium text-black dark:text-stone-50">Порожньо — і це добре</p>
             <p className="max-w-xs text-sm text-stone-500 dark:text-stone-400">
-              Вивали в поле вище все, що крутиться в голові, і натисни «Розібрати».
+              Вивали в поле вище все, що крутиться в голові, і натисни «Спланувати».
               AI перетворить це на задачі й розкладе по днях.
             </p>
           </section>
