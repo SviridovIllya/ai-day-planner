@@ -32,13 +32,24 @@ const collisionDetection: CollisionDetection = (args) => {
   return within.length > 0 ? within : closestCenter(args);
 };
 
-const PRIORITY: Record<Priority, { label: string; stripe: string }> = {
-  high: { label: "Високий пріоритет", stripe: "bg-red-500" },
-  medium: { label: "Середній пріоритет", stripe: "bg-amber-500" },
-  low: { label: "Низький пріоритет", stripe: "bg-stone-300 dark:bg-stone-600" },
+const PRIORITY: Record<Priority, { label: string; stripe: string; text: string }> = {
+  high: { label: "Високий", stripe: "bg-red-500", text: "text-red-600 dark:text-red-400" },
+  medium: { label: "Середній", stripe: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" },
+  low: {
+    label: "Низький",
+    stripe: "bg-stone-300 dark:bg-stone-600",
+    text: "text-stone-500 dark:text-stone-400",
+  },
 };
 
 const PRIORITY_RANK: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
+
+// Тап по мітці підіймає пріоритет: низький → середній → високий → (по колу) низький.
+const NEXT_PRIORITY: Record<Priority, Priority> = { low: "medium", medium: "high", high: "low" };
+
+function nextPriority(p: Priority): Priority {
+  return NEXT_PRIORITY[p];
+}
 
 function sortTasks(tasks: Task[]): Task[] {
   return [...tasks].sort((x, y) => {
@@ -102,6 +113,7 @@ function TaskCard({
   today,
   onToggle,
   onDelete,
+  onCyclePriority,
   handleProps,
   dragging,
 }: {
@@ -109,6 +121,7 @@ function TaskCard({
   today: string;
   onToggle?: (id: string) => void;
   onDelete?: (id: string) => void;
+  onCyclePriority?: (id: string) => void;
   handleProps?: Record<string, unknown>;
   dragging?: boolean;
 }) {
@@ -122,7 +135,10 @@ function TaskCard({
         dragging ? "opacity-40" : ""
       }`}
     >
-      <div className={`w-1 shrink-0 ${p.stripe}`} aria-label={p.label} />
+      <div
+        className={`w-1 shrink-0 transition-colors duration-300 ${p.stripe}`}
+        aria-hidden
+      />
       <div className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2.5">
         <button
           {...handleProps}
@@ -154,6 +170,16 @@ function TaskCard({
             </div>
           )}
         </div>
+        {onCyclePriority && (
+          <button
+            type="button"
+            onClick={() => onCyclePriority(task.id)}
+            aria-label={`Пріоритет: ${p.label}. Натисни, щоб змінити.`}
+            className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium transition active:scale-90 hover:bg-stone-100 dark:hover:bg-stone-800 ${p.text}`}
+          >
+            {p.label}
+          </button>
+        )}
         <button
           onClick={() => onDelete?.(task.id)}
           aria-label="Видалити"
@@ -173,11 +199,13 @@ function DraggableTask({
   today,
   onToggle,
   onDelete,
+  onCyclePriority,
 }: {
   task: Task;
   today: string;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
+  onCyclePriority: (id: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   const [dx, setDx] = useState(0);
@@ -236,6 +264,7 @@ function DraggableTask({
           today={today}
           onToggle={onToggle}
           onDelete={onDelete}
+          onCyclePriority={onCyclePriority}
           handleProps={{ ...attributes, ...listeners }}
           dragging={isDragging}
         />
@@ -379,6 +408,12 @@ export default function Home() {
     setTasks((prev) => prev.filter((t) => t.id !== id));
   }
 
+  function cyclePriority(id: string) {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, priority: nextPriority(t.priority) } : t)),
+    );
+  }
+
   function handleDragEnd(e: DragEndEvent) {
     setActiveId(null);
     const { active, over } = e;
@@ -480,6 +515,7 @@ export default function Home() {
                         today={today}
                         onToggle={toggleCompleted}
                         onDelete={deleteTask}
+                        onCyclePriority={cyclePriority}
                       />
                     ))}
                   </DayColumn>
