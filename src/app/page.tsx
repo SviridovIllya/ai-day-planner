@@ -621,8 +621,8 @@ export default function Home() {
             <div className="text-4xl">🧠</div>
             <p className="font-medium text-black dark:text-stone-50">Порожньо — і це добре</p>
             <p className="max-w-xs text-sm text-stone-500 dark:text-stone-400">
-              Вивали в поле вище все, що крутиться в голові, і натисни «Спланувати».
-              AI перетворить це на задачі й розкладе по днях.
+              Напиши все, що крутиться в голові — купою, без порядку. AI розбере
+              це на задачі й розкладе по днях.
             </p>
           </section>
         ) : (
