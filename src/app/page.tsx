@@ -288,26 +288,44 @@ function DayColumn({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: date });
   const overloaded = load != null && load.minutes > OVERLOAD_MINUTES;
+  const ratio = load ? load.minutes / OVERLOAD_MINUTES : 0;
+  const barPct = Math.min(1, ratio) * 100;
+  const barColor = ratio > 1 ? "bg-red-500" : ratio > 0.75 ? "bg-amber-500" : "bg-emerald-500";
   return (
     <section className="flex flex-col gap-2">
-      <div className="flex items-baseline gap-2">
-        <h2
-          className={`text-xs font-semibold uppercase tracking-wide ${
-            isEmpty ? "text-stone-300 dark:text-stone-700" : "text-stone-500 dark:text-stone-400"
-          } ${isOver ? "text-black dark:text-stone-50" : ""}`}
-        >
-          {label}
-        </h2>
-        {load && (
-          <span className="text-xs text-stone-400 dark:text-stone-500">
-            {load.count} {pluralTasks(load.count)}
-            {load.minutes > 0 && <> · ~{formatDuration(load.minutes)}</>}
-            {overloaded && (
-              <span className="ml-1 font-medium text-amber-600 dark:text-amber-400">
-                · перевантажений
-              </span>
-            )}
-          </span>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-baseline gap-2">
+          <h2
+            className={`text-xs font-semibold uppercase tracking-wide ${
+              isEmpty ? "text-stone-300 dark:text-stone-700" : "text-stone-500 dark:text-stone-400"
+            } ${isOver ? "text-black dark:text-stone-50" : ""}`}
+          >
+            {label}
+          </h2>
+          {load && (
+            <span className="text-xs text-stone-400 dark:text-stone-500">
+              {load.count} {pluralTasks(load.count)}
+              {load.minutes > 0 && <> · ~{formatDuration(load.minutes)}</>}
+              {overloaded && (
+                <span className="ml-1 font-medium text-red-600 dark:text-red-400">
+                  · перевантажений
+                </span>
+              )}
+            </span>
+          )}
+        </div>
+        {load && load.minutes > 0 && (
+          <div
+            className="h-1 w-full overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800"
+            role="progressbar"
+            aria-valuenow={Math.round(ratio * 100)}
+            aria-label={`Завантаження дня: ${Math.round(ratio * 100)}% від робочого дня (~8 год)`}
+          >
+            <div
+              className={`h-full rounded-full transition-all duration-300 ${barColor}`}
+              style={{ width: `${barPct}%` }}
+            />
+          </div>
         )}
       </div>
       <div
